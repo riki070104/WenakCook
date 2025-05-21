@@ -3,9 +3,9 @@ import {
   View,
   Text,
   ScrollView,
-  TextInput,
   Image,
   TouchableOpacity,
+  TextInput,
   StyleSheet,
   Dimensions,
 } from "react-native";
@@ -21,7 +21,7 @@ const recipes = [
   { id: 5, name: "Lontong Balap", image: require("../assets/images/LontongBalap.jpg"), description: "Lontong, tahu, tauge, lentho, dan kuah gurih khas Surabaya." },
 ];
 
-const HomeScreen = () => {
+const HomeScreen = ({ navigation }) => {
   const [selectedRecipe, setSelectedRecipe] = useState(null);
   const [searchText, setSearchText] = useState("");
 
@@ -31,6 +31,11 @@ const HomeScreen = () => {
 
   return (
     <View style={styles.container}>
+      {/* Tombol Kembali */}
+      <TouchableOpacity style={styles.backButton} onPress={() => navigation.navigate("welcome")}>
+        <Text style={styles.backText}>← Kembali</Text>
+      </TouchableOpacity>
+
       <Text style={styles.title}>🍽️ WenakCook</Text>
       <Text style={styles.subtitle}>Resep Makanan Khas Jawa Timur</Text>
 
@@ -43,11 +48,7 @@ const HomeScreen = () => {
       />
 
       <View style={styles.scrollContainer}>
-        <ScrollView
-          contentContainerStyle={styles.scrollContent}
-          showsVerticalScrollIndicator={true}
-          keyboardShouldPersistTaps="handled"
-        >
+        <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={true}>
           {filteredRecipes.length > 0 ? (
             filteredRecipes.map((item) => (
               <TouchableOpacity
@@ -65,7 +66,6 @@ const HomeScreen = () => {
         </ScrollView>
       </View>
 
-      {/* Props dan State diterapkan di sini */}
       {selectedRecipe && (
         <RecipeModal recipe={selectedRecipe} onClose={() => setSelectedRecipe(null)} />
       )}
@@ -80,10 +80,26 @@ const styles = StyleSheet.create({
     paddingTop: 40,
     alignItems: "center",
   },
+  backButton: {
+    position: "absolute",
+    top: 40,
+    left: 20,
+    backgroundColor: "#ddd",
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+    zIndex: 10,
+  },
+  backText: {
+    fontSize: 14,
+    fontWeight: "bold",
+    color: "#333",
+  },
   title: {
     fontSize: 26,
     fontWeight: "bold",
     color: "#333",
+    marginTop: 20,
   },
   subtitle: {
     fontSize: 16,
