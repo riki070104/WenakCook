@@ -4,15 +4,24 @@ import { View, Text, StyleSheet, TouchableOpacity } from "react-native";
 const WelcomeScreen = ({ onNavigate }) => {
   return (
     <View style={styles.container}>
-      <View style={styles.box}>
-        <Text style={styles.title}>🍽️ WenakCook</Text>
-        <Text style={styles.subtitle}>Resep Makanan Khas Jawa Timur</Text>
-      </View>
-      <TouchableOpacity style={styles.button} onPress={() => onNavigate("home")}>
-        <Text style={styles.buttonText}>Resep Makanan</Text>
+      <Text style={styles.title}>Selamat Datang di WenakCook!</Text>
+      <TouchableOpacity
+        style={styles.button}
+        onPress={() => onNavigate("home")}
+      >
+        <Text style={styles.buttonText}>Menu Utama</Text>
       </TouchableOpacity>
-      <TouchableOpacity style={styles.button} onPress={() => onNavigate("tips")}>
+      <TouchableOpacity
+        style={styles.button}
+        onPress={() => onNavigate("tips")}
+      >
         <Text style={styles.buttonText}>Tips Memasak</Text>
+      </TouchableOpacity>
+      <TouchableOpacity
+        style={styles.addButton}
+        onPress={() => onNavigate("addTip")}
+      >
+        <Text style={styles.buttonText}>Tambah Data</Text>
       </TouchableOpacity>
     </View>
   );
@@ -20,38 +29,51 @@ const WelcomeScreen = ({ onNavigate }) => {
 
 const styles = StyleSheet.create({
   container: {
-    flex: 1,
+    flex:1,
     justifyContent: "center",
     alignItems: "center",
-    backgroundColor: "#fff",
+    backgroundColor: "#f8f8f8",
     padding: 20,
-  },
-  box: {
-    marginBottom: 40,
-    alignItems: "center",
   },
   title: {
     fontSize: 28,
     fontWeight: "bold",
+    marginBottom: 40,
     color: "#333",
-  },
-  subtitle: {
-    fontSize: 16,
-    color: "#666",
-    marginTop: 5,
+    textAlign: "center",
   },
   button: {
-    backgroundColor: "#ff6347",
-    paddingVertical: 12,
-    paddingHorizontal: 25,
-    borderRadius: 10,
+    backgroundColor: "#6a8caf",
+    paddingVertical: 15,
+    paddingHorizontal: 40,
+    borderRadius: 12,
     marginVertical: 10,
-    width: "70%",
+    width: "80%",
     alignItems: "center",
+    shadowColor: "#000",
+    shadowOpacity: 0.2,
+    shadowOffset: { width: 0, height: 3 },
+    shadowRadius: 5,
+    elevation: 4,
+  },
+  addButton: {
+    backgroundColor: "#f57c00",
+    paddingVertical: 15,
+    paddingHorizontal: 40,
+    borderRadius: 12,
+    marginTop: 30,
+    width: "80%",
+    alignItems: "center",
+    shadowColor: "#000",
+    shadowOpacity: 0.25,
+    shadowOffset: { width: 0, height: 4 },
+    shadowRadius: 6,
+    elevation: 5,
   },
   buttonText: {
     color: "#fff",
     fontSize: 18,
+    fontWeight: "600",
   },
 });
 

@@ -1,7 +1,7 @@
 import React from "react";
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from "react-native";
 
-const TipsScreen = ({ navigation }) => {
+const TipsScreen = ({ tips, navigation }) => {
   return (
     <ScrollView contentContainerStyle={styles.container}>
       <TouchableOpacity style={styles.backButton} onPress={() => navigation.navigate("welcome")}>
@@ -9,11 +9,13 @@ const TipsScreen = ({ navigation }) => {
       </TouchableOpacity>
 
       <Text style={styles.title}>Tips Memasak</Text>
-      <Text style={styles.tip}>🍳 Panaskan wajan terlebih dahulu sebelum memasukkan bahan.</Text>
-      <Text style={styles.tip}>🧂 Gunakan garam secukupnya, dan cicipi dahulu sebelum menambahkannya.</Text>
-      <Text style={styles.tip}>🧼 Pastikan bahan-bahan dicuci bersih sebelum dimasak.</Text>
-      <Text style={styles.tip}>🕒 Jangan terlalu lama memasak sayuran agar kandungan gizinya tetap terjaga.</Text>
-      <Text style={styles.tip}>🔥 Gunakan api kecil untuk masakan yang memerlukan waktu lama seperti semur.</Text>
+      {tips.length === 0 ? (
+        <Text style={styles.noTipsText}>Belum ada tips memasak.</Text>
+      ) : (
+        tips.map((tip, index) => (
+          <Text key={index} style={styles.tip}>{tip}</Text>
+        ))
+      )}
     </ScrollView>
   );
 };
@@ -22,6 +24,7 @@ const styles = StyleSheet.create({
   container: {
     padding: 20,
     backgroundColor: "#fff",
+    paddingBottom: 40,
   },
   backButton: {
     backgroundColor: "#ddd",
@@ -46,6 +49,13 @@ const styles = StyleSheet.create({
     fontSize: 16,
     marginBottom: 10,
     color: "#555",
+  },
+  noTipsText: {
+    fontSize: 16,
+    color: "#999",
+    fontStyle: "italic",
+    textAlign: "center",
+    marginTop: 30,
   },
 });
 
