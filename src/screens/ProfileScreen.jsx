@@ -1,158 +1,166 @@
-// src/screens/ProfileScreen.jsx
-import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Image, ScrollView, Alert } from 'react-native';
+import React, { useRef, useState, useEffect } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  Image,
+  Pressable,
+  ScrollView,
+  Alert,
+  ActivityIndicator,
+} from 'react-native';
+import * as Animatable from 'react-native-animatable';
+import { Edit, Setting2, Logout } from 'iconsax-react-native';
+import { useFocusEffect } from '@react-navigation/native';
 
 const ProfileScreen = ({ navigation }) => {
-  // Data profil pura-pura dulu ya, Bang
+  const containerRef = useRef(null);
+  const [triggerKey, setTriggerKey] = useState(0);
+
   const userProfile = {
-    name: "Riki Firmansyah", // Ganti sama nama Abang
-    username: "riki070104",
-    bio: "Food enthusiast & WenakCook App Developer!",
-    // Ganti pake foto Abang, atau biarin default kalo belum ada
-    avatar: require('../assets/images/Rawon.jpg'), // Pastiin ada gambar ini di assets
-    recipesContributed: 5, // Contoh aja
-    tipsShared: 3,         // Contoh aja
+    name: 'Riki Firmansyah',
+    username: 'riki070104',
+    bio: 'Food enthusiast & WenakCook App Developer!',
+    avatar: require('../assets/images/Rawon.jpg'),
   };
 
+  useFocusEffect(
+    React.useCallback(() => {
+      if (containerRef.current) {
+        containerRef.current.fadeInUp(600);
+      }
+      setTriggerKey((prev) => prev + 1);
+    }, [])
+  );
+
   const handleLogout = () => {
-    // Di aplikasi beneran, di sini bakal ada proses logout
     Alert.alert(
-      "Logout",
-      "Yakin mau keluar, Bang?",
+      'Logout',
+      'Yakin mau keluar, Bang?',
       [
-        { text: "Batal", style: "cancel" },
-        { text: "Ya, Keluar", onPress: () => console.log("User logged out (pura-pura)") } // Nanti bisa diganti navigasi ke layar login
-      ]
+        { text: 'Batal', style: 'cancel' },
+        {
+          text: 'Ya, Keluar',
+          onPress: () => console.log('User logged out (pura-pura)'),
+        },
+      ],
+      { cancelable: true }
     );
   };
 
   return (
-    <ScrollView style={styles.scrollView} contentContainerStyle={styles.container}>
-      <Image source={userProfile.avatar} style={styles.avatar} />
-      <Text style={styles.name}>{userProfile.name}</Text>
-      <Text style={styles.username}>@{userProfile.username}</Text>
-      <Text style={styles.bio}>{userProfile.bio}</Text>
-
-      <View style={styles.statsContainer}>
-        <View style={styles.statItem}>
-          <Text style={styles.statNumber}>{userProfile.recipesContributed}</Text>
-          <Text style={styles.statLabel}>Resep Dibuat</Text>
+    <Animatable.View
+      ref={containerRef}
+      animation="fadeInUp"
+      duration={600}
+      style={styles.container}
+    >
+      <ScrollView contentContainerStyle={styles.scrollContent}>
+        {/* Foto & Nama */}
+        <View style={styles.profileContainer}>
+          <Image source={userProfile.avatar} style={styles.profileImage} />
+          <Text style={styles.profileName}>{userProfile.name}</Text>
+          <Text style={styles.profileEmail}>@{userProfile.username}</Text>
+          <Text style={styles.profileBio}>{userProfile.bio}</Text>
         </View>
-        <View style={styles.statItem}>
-          <Text style={styles.statNumber}>{userProfile.tipsShared}</Text>
-          <Text style={styles.statLabel}>Tips Dibagi</Text>
+
+        {/* Menu */}
+        <View style={styles.menuContainer} key={triggerKey}>
+          {[
+            {
+              icon: <Edit size="24" color="#333" variant="Outline" />,
+              text: 'Tambah Resep',
+              action: () => navigation.navigate('RecipeForm'),
+              color: '#333',
+            },
+            {
+              icon: <Setting2 size="24" color="#333" variant="Outline" />,
+              text: 'Pengaturan',
+              action: () => alert('Menu Pengaturan belum tersedia'),
+              color: '#333',
+            },
+            {
+              icon: <Logout size="24" color="red" variant="Outline" />,
+              text: 'Keluar',
+              action: handleLogout,
+              color: 'red',
+            },
+          ].map((item, index) => (
+            <Animatable.View
+              key={item.text}
+              animation="fadeInLeft"
+              delay={index * 150}
+              useNativeDriver
+            >
+              <Pressable style={styles.menuItem} onPress={item.action}>
+                {item.icon}
+                <Text style={[styles.menuText, { color: item.color }]}>{item.text}</Text>
+              </Pressable>
+            </Animatable.View>
+          ))}
         </View>
-      </View>
-
-      <TouchableOpacity
-        style={[styles.button, styles.addRecipeButton]}
-        onPress={() => navigation.navigate('RecipeForm')}
-      >
-        <Text style={styles.buttonText}>Tambah Resep/Tip Baru</Text>
-      </TouchableOpacity>
-
-      <TouchableOpacity
-        style={[styles.button, styles.logoutButton]}
-        onPress={handleLogout}
-      >
-        <Text style={styles.buttonText}>Logout</Text>
-      </TouchableOpacity>
-    </ScrollView>
+      </ScrollView>
+    </Animatable.View>
   );
 };
 
+export default ProfileScreen;
+
 const styles = StyleSheet.create({
-  scrollView: {
-    flex: 1,
-    backgroundColor: '#f0f4f8',
-  },
   container: {
-    alignItems: 'center',
-    paddingVertical: 30,
-    paddingHorizontal: 20,
+    flex: 1,
+    backgroundColor: '#FFF8F0',
   },
-  avatar: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
-    marginBottom: 15,
-    borderWidth: 3,
+  scrollContent: {
+    paddingHorizontal: 16,
+    paddingBottom: 32,
+  },
+  profileContainer: {
+    marginTop: 59,
+    alignItems: 'center',
+    marginBottom: 40,
+  },
+  profileImage: {
+    width: 100,
+    height: 100,
+    borderRadius: 100,
+    marginBottom: 16,
+    borderWidth: 2,
     borderColor: '#f57c00',
   },
-  name: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#333',
-    marginBottom: 5,
-  },
-  username: {
-    fontSize: 16,
-    color: '#666',
-    marginBottom: 10,
-  },
-  bio: {
-    fontSize: 14,
-    color: '#444',
-    textAlign: 'center',
-    marginBottom: 20,
-    paddingHorizontal: 20,
-  },
-  statsContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    width: '80%',
-    marginBottom: 30,
-    paddingVertical: 15,
-    backgroundColor: '#fff',
-    borderRadius: 10,
-    shadowColor: "#000",
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 3.84,
-    elevation: 3,
-  },
-  statItem: {
-    alignItems: 'center',
-  },
-  statNumber: {
+  profileName: {
     fontSize: 20,
     fontWeight: 'bold',
-    color: '#f57c00',
+    color: '#333',
   },
-  statLabel: {
-    fontSize: 12,
-    color: '#555',
-    marginTop: 4,
+  profileEmail: {
+    fontSize: 14,
+    color: '#666',
   },
-  button: {
-    width: '80%',
-    paddingVertical: 15,
-    borderRadius: 10,
+  profileBio: {
+    fontSize: 14,
+    color: '#444',
+    marginTop: 8,
+    textAlign: 'center',
+    paddingHorizontal: 20,
+  },
+  menuContainer: {
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    paddingVertical: 16,
+    paddingHorizontal: 8,
+    gap: 12,
+    elevation: 2,
+  },
+  menuItem: {
+    flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 15,
-    shadowColor: "#000",
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.20,
-    shadowRadius: 2.62,
-    elevation: 4,
+    gap: 12,
+    padding: 12,
+    borderRadius: 10,
   },
-  addRecipeButton: {
-    backgroundColor: '#f57c00',
-  },
-  logoutButton: {
-    backgroundColor: '#6a8caf', // Warna beda buat logout
-  },
-  buttonText: {
-    color: '#fff',
+  menuText: {
     fontSize: 16,
-    fontWeight: '600',
+    color: '#333',
   },
 });
-
-export default ProfileScreen;
