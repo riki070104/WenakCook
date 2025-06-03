@@ -1,5 +1,5 @@
 // src/screens/HomeScreen.jsx
-import React, { useState, useMemo } from "react";
+import React, {useState, useMemo, useCallback} from 'react';
 import {
   View,
   Text,
@@ -10,66 +10,96 @@ import {
   StyleSheet,
   Dimensions,
   FlatList,
-} from "react-native";
-// RecipeModal gak dipake lagi kalo detailnya udah pindah ke RecipeDetailScreen
-// import RecipeModal from "../components/RecipeModal";
+  RefreshControl, // Tambahkan RefreshControl
+  Alert,
+} from 'react-native';
+import {useNavigation} from '@react-navigation/native';
 
-const screenWidth = Dimensions.get("window").width;
+const defaultRecipeImageFromApp = require('../assets/images/Rawon.jpg');
+const screenWidth = Dimensions.get('window').width;
 
-// Kategori resep (opsional, bisa diaktifin nanti)
-// const recipeCategories = [
-//   { id: 'all', name: 'Semua' },
-//   { id: 'main', name: 'Utama' },
-//   { id: 'snack', name: 'Camilan' },
-//   { id: 'drink', name: 'Minuman' },
-// ];
+const FeaturedRecipeCard = ({item, onPress}) => {
+  const imageSource =
+    item.image && item.image.uri
+      ? {uri: item.image.uri}
+      : defaultRecipeImageFromApp;
 
-const FeaturedRecipeCard = ({ item, onPress }) => (
-  <TouchableOpacity style={styles.featuredCard} onPress={onPress}>
-    <Image source={item.image} style={styles.featuredImage} />
-    <View style={styles.featuredTextContainer}>
-      <Text style={styles.featuredName} numberOfLines={1} ellipsizeMode="tail">{item.name}</Text>
-    </View>
-  </TouchableOpacity>
-);
+  return (
+    <TouchableOpacity style={styles.featuredCard} onPress={onPress}>
+      <Image source={imageSource} style={styles.featuredImage} />
+      <View style={styles.featuredTextContainer}>
+        <Text
+          style={styles.featuredName}
+          numberOfLines={1}
+          ellipsizeMode="tail">
+          {item.name || 'Nama Resep'}
+        </Text>
+      </View>
+    </TouchableOpacity>
+  );
+};
 
-const HomeScreen = ({ navigation, recipes }) => { // recipes dioper dari App.jsx
-  const [searchText, setSearchText] = useState("");
-  // const [selectedCategory, setSelectedCategory] = useState('all'); // Kalo kategori mau dipake
+const HomeScreen = ({recipes: recipesFromApp, onRefreshRequest}) => {
+  const navigation = useNavigation();
+  const [searchText, setSearchText] = useState('');
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
-  // Filter resep berdasarkan pencarian (dan kategori kalo diaktifin)
+  const handleRefresh = useCallback(async () => {
+    setIsRefreshing(true);
+    if (onRefreshRequest) {
+      await onRefreshRequest();
+    }
+    setIsRefreshing(false);
+  }, [onRefreshRequest]);
+
   const filteredRecipes = useMemo(() => {
-    let R = recipes; // Ambil semua resep dari props
-
-    // Kalo mau pake filter kategori, uncomment dan sesuaikan bagian ini:
-    // if (selectedCategory !== 'all' && R) {
-    //   R = R.filter(recipe => recipe.category === selectedCategory); // Asumsi ada recipe.category
-    // }
-
-    if (searchText && R) {
+    let R = Array.isArray(recipesFromApp) ? recipesFromApp : [];
+    if (searchText) {
       const lowerSearchText = searchText.toLowerCase();
-      R = R.filter(item =>
-        item.name.toLowerCase().includes(lowerSearchText)
+      R = R.filter(
+        item =>
+          item &&
+          item.name &&
+          item.name.toLowerCase().includes(lowerSearchText),
       );
     }
-    return R || []; // Pastiin selalu array, meskipun R jadi null/undefined
-  }, [recipes, searchText /*, selectedCategory */]);
+    return R;
+  }, [recipesFromApp, searchText]);
 
-  // Ambil beberapa resep buat ditampilin di "Resep Pilihan"
-  // Kalo ada hasil filter, pake hasil filter. Kalo gak, pake resep awal.
-  const recipesToShowInFeatured = filteredRecipes.length > 0 ? filteredRecipes : (searchText ? [] : recipes);
-  const featuredRecipes = recipesToShowInFeatured.slice(0, 5); // Tampilkan sampai 5 resep pilihan
+  const recipesToShowInFeatured =
+    filteredRecipes.length > 0
+      ? filteredRecipes
+      : searchText
+      ? []
+      : recipesFromApp;
+  const featuredRecipes = Array.isArray(recipesToShowInFeatured)
+    ? recipesToShowInFeatured.slice(0, 5)
+    : [];
 
   const handleNavigateToLibrary = () => {
-    navigation.navigate('LibraryTab', { screen: 'RecipeLibraryMain' });
+    navigation.navigate('LibraryTab', {screen: 'RecipeLibraryMain'});
   };
 
-  const handleRecipePress = (recipe) => {
-    navigation.navigate('RecipeDetail', { recipe: recipe });
+  const handleRecipePress = recipeId => {
+    if (recipeId) {
+      navigation.navigate('RecipeDetail', {recipeId});
+    } else {
+      Alert.alert('Error', 'ID resep tidak valid untuk dibuka.');
+    }
   };
 
   return (
-    <ScrollView style={styles.scrollView} contentContainerStyle={styles.container}>
+    <ScrollView
+      style={styles.scrollView}
+      contentContainerStyle={styles.container}
+      refreshControl={
+        // Tambahkan RefreshControl di sini
+        <RefreshControl
+          refreshing={isRefreshing}
+          onRefresh={handleRefresh}
+          colors={['#f57c00']} // Warna spinner refresh
+        />
+      }>
       <View style={styles.headerContainer}>
         <Text style={styles.headerTitle}>WenakCook</Text>
         <Text style={styles.headerSubtitle}>Mau masak apa hari ini, Bang?</Text>
@@ -80,25 +110,24 @@ const HomeScreen = ({ navigation, recipes }) => { // recipes dioper dari App.jsx
         placeholder="🔍 Cari resep masakan..."
         placeholderTextColor="#aaa"
         value={searchText}
-        onChangeText={(text) => setSearchText(text)} // Langsung update searchText
-        clearButtonMode="while-editing" // Tombol clear (iOS)
+        onChangeText={setSearchText}
+        clearButtonMode="while-editing"
       />
-
-      {/* Bagian Kategori (Opsional, bisa di-uncomment dan disesuaikan) */}
-      {/* <View style={styles.categoriesContainer}> ... </View> */}
 
       <View style={styles.sectionContainer}>
         <Text style={styles.sectionTitle}>
-          {searchText ? `Hasil Pencarian (${filteredRecipes.length})` : "Resep Pilihan Untukmu ✨"}
+          {searchText
+            ? `Hasil Pencarian (${filteredRecipes.length})`
+            : 'Resep Pilihan ✨'}
         </Text>
         {featuredRecipes.length > 0 ? (
           <FlatList
             horizontal
             data={featuredRecipes}
-            renderItem={({ item }) => (
+            renderItem={({item}) => (
               <FeaturedRecipeCard
                 item={item}
-                onPress={() => handleRecipePress(item)}
+                onPress={() => handleRecipePress(item.id)}
               />
             )}
             keyExtractor={item => item.id.toString()}
@@ -107,38 +136,43 @@ const HomeScreen = ({ navigation, recipes }) => { // recipes dioper dari App.jsx
           />
         ) : (
           <Text style={styles.noFeaturedText}>
-            {searchText ? "Resep tidak ditemukan." : "Belum ada resep."}
+            {searchText
+              ? 'Resep tidak ditemukan.'
+              : recipesFromApp && recipesFromApp.length > 0
+              ? 'Tidak ada resep pilihan yang cocok.'
+              : 'Belum ada resep.'}
           </Text>
         )}
       </View>
 
-      {/* Tombol Lihat Semua cuma muncul kalo hasil filter lebih banyak dari yg ditampilin,
-          atau kalo gak ada teks pencarian (artinya nampilin semua dari awal) */}
-      {(filteredRecipes.length > featuredRecipes.length && filteredRecipes.length > 0) || (!searchText && recipes && recipes.length > featuredRecipes.length) ? (
-         <TouchableOpacity style={styles.seeAllButton} onPress={handleNavigateToLibrary}>
-            <Text style={styles.seeAllButtonText}>Lihat Semua Resep Lainnya ({filteredRecipes.length})</Text>
-         </TouchableOpacity>
-      ): null}
+      {(filteredRecipes.length > featuredRecipes.length &&
+        filteredRecipes.length > 0) ||
+      (!searchText &&
+        recipesFromApp &&
+        recipesFromApp.length > featuredRecipes.length) ? (
+        <TouchableOpacity
+          style={styles.seeAllButton}
+          onPress={handleNavigateToLibrary}>
+          <Text style={styles.seeAllButtonText}>
+            Lihat Semua Resep ({recipesFromApp.length})
+          </Text>
+        </TouchableOpacity>
+      ) : null}
     </ScrollView>
   );
 };
 
 const styles = StyleSheet.create({
-  scrollView: {
-    flex: 1,
-    backgroundColor: '#f8f9fa',
-  },
-  container: {
-    paddingBottom: 30,
-  },
+  scrollView: {flex: 1, backgroundColor: '#FFF8F0'}, // Warna dasar
+  container: {paddingBottom: 30},
   headerContainer: {
-    backgroundColor: '#f57c00',
+    backgroundColor: '#b35400',
     paddingHorizontal: 20,
-    paddingTop: 40, // Sesuaikan dengan status bar
-    paddingBottom: 20,
-    borderBottomLeftRadius: 20,
-    borderBottomRightRadius: 20,
-    marginBottom: 5
+    paddingTop: Platform.OS === 'ios' ? 50 : 25,
+    paddingBottom: 25,
+    borderBottomLeftRadius: 25,
+    borderBottomRightRadius: 25,
+    marginBottom: 10,
   },
   headerTitle: {
     fontSize: 28,
@@ -148,10 +182,10 @@ const styles = StyleSheet.create({
   },
   headerSubtitle: {
     fontSize: 16,
-    color: '#fff',
+    color: '#FFDAB9',
     textAlign: 'center',
     marginTop: 4,
-  },
+  }, // Warna peach agar kontras
   searchBar: {
     width: '90%',
     backgroundColor: '#fff',
@@ -161,75 +195,68 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#333',
     borderWidth: 1,
-    borderColor: '#ddd',
-    marginTop: 20,
+    borderColor: '#E0DACC',
+    marginTop: 15,
     marginBottom: 20,
     alignSelf: 'center',
-    elevation: 3,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: {width: 0, height: 1},
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
   },
-  sectionContainer: {
-    marginBottom: 20,
-    paddingHorizontal: 15,
-  },
+  sectionContainer: {marginBottom: 20, paddingHorizontal: 15},
   sectionTitle: {
     fontSize: 20,
     fontWeight: 'bold',
-    color: '#333',
+    color: '#b35400',
     marginBottom: 15,
   },
-  featuredListContainer: {
-    paddingVertical: 5, // Kasih sedikit padding vertikal buat card
-  },
+  featuredListContainer: {paddingVertical: 5},
   featuredCard: {
-    width: screenWidth * 0.55, // Lebar card disesuaikan
-    backgroundColor: "#fff",
+    width: screenWidth * 0.58,
+    backgroundColor: '#fff',
     borderRadius: 12,
     marginRight: 15,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.20,
-    shadowRadius: 1.41,
-    elevation: 2,
-    overflow: 'hidden', // Biar shadow gak aneh di Android
+    shadowColor: '#000',
+    shadowOffset: {width: 0, height: 1},
+    shadowOpacity: 0.15,
+    shadowRadius: 2.5,
+    elevation: 3,
+    overflow: 'visible',
   },
   featuredImage: {
-    width: "100%",
-    height: 110, // Tinggi gambar di card
-    borderTopLeftRadius: 12, // Biar gambar ikut bulet
+    width: '100%',
+    height: 120,
+    borderTopLeftRadius: 12,
     borderTopRightRadius: 12,
+    backgroundColor: '#e0e0e0',
   },
-  featuredTextContainer: {
-    padding: 10,
-    minHeight: 60, // Biar card sama tinggi kalo nama resep beda panjang
-    justifyContent: 'center',
-  },
-  featuredName: {
-    fontSize: 15,
-    fontWeight: "600", // Sedikit beda dari judul section
-    color: "#444",
-  },
+  featuredTextContainer: {padding: 12, minHeight: 65, justifyContent: 'center'},
+  featuredName: {fontSize: 16, fontWeight: '600', color: '#444'}, // Font lebih besar
   noFeaturedText: {
     textAlign: 'center',
-    color: '#6c757d',
+    color: '#757575',
     marginTop: 20,
     marginBottom: 20,
     fontStyle: 'italic',
+    fontSize: 15,
   },
   seeAllButton: {
-    backgroundColor: '#6a8caf',
+    backgroundColor: '#ff7f50',
     paddingVertical: 12,
     paddingHorizontal: 30,
     borderRadius: 25,
     alignSelf: 'center',
-    marginTop: 10,
+    marginTop: 5,
     marginBottom: 20,
     elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: {width: 0, height: 1},
+    shadowOpacity: 0.15,
+    shadowRadius: 2,
   },
-  seeAllButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
+  seeAllButtonText: {color: '#fff', fontSize: 16, fontWeight: '600'},
 });
 
 export default HomeScreen;

@@ -1,5 +1,5 @@
 // src/screens/RecipeDetailScreen.jsx
-import React, { useEffect, useState, useLayoutEffect } from 'react';
+import React, {useEffect, useState, useLayoutEffect, useCallback} from 'react';
 import {
   View,
   Text,
@@ -8,246 +8,302 @@ import {
   StyleSheet,
   TouchableOpacity,
   TouchableWithoutFeedback,
-  Alert, // Import Alert
+  Alert,
+  ActivityIndicator,
+  Platform,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
-// Ganti nama getRecipeById menjadi getRecipeByIdAPI agar konsisten
-import { getRecipeByIdAPI, deleteRecipeAPI } from '../services/API';
+import {
+  getRecipeByIdFirestore,
+  deleteRecipeFirestore,
+} from '../services/Firebase';
 
-const RecipeDetailScreen = ({ route, navigation }) => {
-  const { recipeId, onRecipeUpdatedInList, onRecipeDeletedInList } = route.params || {}; // Ambil callback jika ada
+const defaultPlaceholderImage =
+  'https://via.placeholder.com/300/CCCCCC/FFFFFF?text=No+Image';
+
+const RecipeDetailScreen = ({route, navigation}) => {
+  const {recipeId, onRecipeUpdatedInList, onRecipeDeletedInList} =
+    route.params || {};
   const [recipe, setRecipe] = useState(null);
+  const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
   const [menuVisible, setMenuVisible] = useState(false);
 
-  const fetchRecipe = async () => {
+  const fetchRecipeDetails = useCallback(async () => {
     if (!recipeId) {
-      setError('ID resep tidak tersedia.');
-      setRecipe(null); // Pastikan recipe null jika tidak ada ID
+      setError('ID resep tidak valid.');
+      setIsLoading(false);
+      setRecipe(null);
       return;
     }
+    setIsLoading(true);
+    setError(null);
     try {
-      setError(null); // Reset error
-      const data = await getRecipeByIdAPI(recipeId); // Gunakan nama fungsi API yang baru
-      setRecipe(data);
+      const dataFromFirestore = await getRecipeByIdFirestore(recipeId);
+      if (dataFromFirestore) {
+        setRecipe(dataFromFirestore);
+      } else {
+        setError('Resep tidak ditemukan.');
+        setRecipe(null);
+      }
     } catch (err) {
-      console.error("Error fetching recipe details:", err);
       setError('Gagal memuat detail resep.');
-      setRecipe(null); // Set recipe null jika gagal fetch
+      setRecipe(null);
+    } finally {
+      setIsLoading(false);
     }
-  };
-
-  useEffect(() => {
-    fetchRecipe();
   }, [recipeId]);
 
-  // Untuk menutup menu ketika navigasi berubah atau interaksi lain
   useEffect(() => {
-    const unsubscribe = navigation.addListener('blur', () => {
-      setMenuVisible(false);
-    });
+    fetchRecipeDetails();
+  }, [fetchRecipeDetails]);
+
+  useEffect(() => {
+    const unsubscribe = navigation.addListener('blur', () =>
+      setMenuVisible(false),
+    );
     return unsubscribe;
   }, [navigation]);
 
-
   useLayoutEffect(() => {
-    if (recipe) { // Hanya setel header jika ada resep
-      navigation.setOptions({
-        title: recipe.name || 'Detail Resep', // Set judul header
-        headerRight: () => (
-          <TouchableOpacity
-            onPress={() => setMenuVisible(prev => !prev)} // Toggle menu
-            style={{ marginRight: 15 }}
-          >
-            <Icon name="ellipsis-vertical" size={24} color="#333" />
-          </TouchableOpacity>
-        ),
-      });
-    } else {
-      navigation.setOptions({ // Default title jika resep belum load
-        title: 'Detail Resep',
-        headerRight: undefined, // Sembunyikan menu jika tidak ada resep
-      });
-    }
+    navigation.setOptions({
+      title: recipe?.name || 'Detail Resep',
+      headerTintColor: '#b35400', // Warna teks header agar konsisten
+      headerRight: recipe
+        ? () => (
+            <TouchableOpacity
+              onPress={() => setMenuVisible(prev => !prev)}
+              style={{marginRight: 15}}>
+              <Icon name="ellipsis-vertical" size={24} color="#b35400" />
+            </TouchableOpacity>
+          )
+        : undefined,
+    });
   }, [navigation, menuVisible, recipe]);
 
   const handleDelete = async () => {
     setMenuVisible(false);
+    if (!recipe || !recipe.id) {
+      Alert.alert('Error', 'Tidak ada resep untuk dihapus.');
+      return;
+    }
     Alert.alert(
-      "Hapus Resep",
-      `Anda yakin ingin menghapus "${recipe?.name}"?`,
+      'Hapus Resep',
+      `Yakin ingin menghapus "${recipe.name}"?`,
       [
-        { text: "Batal", style: "cancel" },
+        {text: 'Batal', style: 'cancel'},
         {
-          text: "Hapus",
-          style: "destructive",
+          text: 'Hapus',
+          style: 'destructive',
           onPress: async () => {
+            setIsLoading(true);
             try {
-              await deleteRecipeAPI(recipeId);
-              Alert.alert('Sukses', 'Resep berhasil dihapus.');
-              if (onRecipeDeletedInList) { // Callback untuk update list di App.js
-                onRecipeDeletedInList(recipeId);
-              }
+              // Jika Abang punya endpoint untuk hapus gambar dari backend eksternal, panggil di sini.
+              // Contoh: if (recipe.image?.uri) await deleteExternalImageAPI(recipe.image.uri);
+              await deleteRecipeFirestore(recipe.id);
+              Alert.alert('Sukses', `Resep "${recipe.name}" dihapus.`);
+              if (onRecipeDeletedInList) onRecipeDeletedInList(recipe.id);
               navigation.goBack();
             } catch (deleteError) {
-              console.error("Error deleting recipe:", deleteError);
-              Alert.alert('Gagal', 'Terjadi kesalahan saat menghapus resep.');
+              Alert.alert('Gagal', 'Gagal menghapus resep dari server.');
+              setIsLoading(false);
             }
           },
         },
-      ]
+      ],
+      {cancelable: true},
     );
   };
 
   const handleEdit = () => {
     setMenuVisible(false);
     if (recipe) {
-      navigation.navigate('RecipeForm', { // Navigasi ke screen RecipeForm global
-        recipe: recipe, // Kirim data resep saat ini
-        isEdit: true,   // Tandai sebagai mode edit
-        onFormSubmitSuccess: (updatedRecipeData) => {
-          setRecipe(updatedRecipeData); // Update state di RecipeDetailScreen
-          if (onRecipeUpdatedInList) { // Callback untuk update list di App.js
-            onRecipeUpdatedInList(updatedRecipeData);
-          }
-          Alert.alert("Info", "Resep telah diperbarui di halaman detail ini.");
-        }
+      navigation.navigate('RecipeForm', {
+        // Navigasi ke RecipeForm global
+        recipe: recipe,
+        isEdit: true,
+        onFormSubmitSuccess: updatedRecipe => {
+          setRecipe(updatedRecipe); // Update state lokal
+          if (onRecipeUpdatedInList) onRecipeUpdatedInList(updatedRecipe); // Update state global
+        },
       });
+    } else {
+      Alert.alert('Error', 'Data resep tidak ada untuk diedit.');
     }
   };
+
+  if (isLoading) {
+    return (
+      <View style={[styles.center, {backgroundColor: '#FFF8F0'}]}>
+        <ActivityIndicator size="large" color="#b35400" />
+        <Text style={{marginTop: 10, color: '#555'}}>Memuat detail...</Text>
+      </View>
+    );
+  }
 
   if (error) {
     return (
       <View style={styles.center}>
         <Text style={styles.errorText}>{error}</Text>
-        <TouchableOpacity onPress={fetchRecipe} style={styles.retryButton}>
-            <Text style={styles.retryButtonText}>Coba Lagi</Text>
+        <TouchableOpacity
+          onPress={fetchRecipeDetails}
+          style={styles.retryButton}>
+          <Text style={styles.retryButtonText}>Coba Lagi</Text>
         </TouchableOpacity>
       </View>
     );
   }
 
-  if (!recipe) { // Tampilkan loading atau null jika recipe belum ada
+  if (!recipe) {
     return (
       <View style={styles.center}>
-        <Text>Memuat data resep...</Text>
+        <Text style={styles.errorText}>Resep tidak dapat ditemukan.</Text>
       </View>
     );
   }
 
-  // Destructure setelah cek recipe ada
-  const { image, name, shortDescription, ingredients, steps } = recipe;
+  const {image, name, shortDescription, ingredients, steps} = recipe;
+  const imageUriToDisplay =
+    image && image.uri ? image.uri : defaultPlaceholderImage;
 
   return (
-    <TouchableWithoutFeedback onPress={() => menuVisible && setMenuVisible(false)}>
-      <View style={{ flex: 1 }}>
-        <ScrollView style={styles.container}>
-          {image && image.uri && ( // Pastikan image dan image.uri ada
-            <Image
-              source={{ uri: image.uri }}
-              style={styles.image}
-              resizeMode="cover"
-            />
-          )}
-
-          <Text style={styles.title}>{name || 'Judul resep tidak tersedia'}</Text>
-          <Text style={styles.description}>{shortDescription || 'Deskripsi tidak tersedia.'}</Text>
-
+    <ScrollView
+      onPress={() => menuVisible && setMenuVisible(false)}>
+      <View style={{flex: 1, backgroundColor: '#FFF8F0'}}>
+        <ScrollView
+          style={styles.containerScroll}
+          contentContainerStyle={styles.contentContainerScroll}>
+          <Image
+            source={{uri: imageUriToDisplay}}
+            style={styles.image}
+            resizeMode="cover"
+          />
+          <Text style={styles.title}>{name || 'Nama Resep Tidak Ada'}</Text>
+          <Text style={styles.description}>
+            {shortDescription || 'Deskripsi tidak ada.'}
+          </Text>
           <Text style={styles.sectionTitle}>Bahan-bahan:</Text>
           {ingredients?.length > 0 ? (
-            ingredients.map((item, index) => (
-              <Text key={index} style={styles.listItem}>
-                • {item}
-              </Text>
-            ))
+            ingredients.map((item, index) => {
+              if (typeof item === 'string' && item.trim() !== '') {
+                // Hanya render jika string dan tidak kosong
+                return (
+                  <Text key={`ing-${index}`} style={styles.listItem}>
+                    • {item}
+                  </Text>
+                );
+              }
+              return null; // Abaikan item yang tidak valid
+            })
           ) : (
             <Text style={styles.listItem}>Tidak ada data bahan.</Text>
           )}
-
           <Text style={styles.sectionTitle}>Langkah-langkah:</Text>
           {steps?.length > 0 ? (
-            steps.map((item, index) => (
-              <Text key={index} style={styles.listItem}>
-                {index + 1}. {item}
-              </Text>
-            ))
+            steps.map((item, index) => {
+              if (typeof item === 'string' && item.trim() !== '') {
+                // Hanya render jika string dan tidak kosong
+                return (
+                  <Text key={`step-${index}`} style={styles.listItem}>
+                    {index + 1}. {item}
+                  </Text>
+                );
+              }
+              return null; // Abaikan item yang tidak valid
+            })
           ) : (
             <Text style={styles.listItem}>Tidak ada data langkah.</Text>
           )}
+          <View style={{height: 70}} /> {/* Spacer untuk bottom menu */}
         </ScrollView>
-
         {menuVisible && (
           <View style={styles.menuContainer}>
             <TouchableOpacity style={styles.menuItem} onPress={handleEdit}>
               <Text style={styles.menuText}>Edit</Text>
             </TouchableOpacity>
             <TouchableOpacity style={styles.menuItem} onPress={handleDelete}>
-              <Text style={[styles.menuText, { color: 'red' }]}>Hapus</Text>
+              <Text style={[styles.menuText, {color: 'red'}]}>Hapus</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.menuItem} onPress={() => setMenuVisible(false)}>
+            <TouchableOpacity
+              style={[styles.menuItem, styles.menuItemBorderless]}
+              onPress={() => setMenuVisible(false)}>
               <Text style={styles.menuText}>Batal</Text>
             </TouchableOpacity>
           </View>
         )}
       </View>
-    </TouchableWithoutFeedback>
+    </ScrollView>
   );
 };
 
-// Styles tetap sama, tambahkan retryButton style
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#fff', padding: 20 },
-  image: { width: '100%', height: 250, borderRadius: 10, marginBottom: 15 }, // Tinggikan gambar
-  title: { fontSize: 26, fontWeight: 'bold', marginBottom: 10, color: '#333' }, // Besarkan title
-  description: { fontSize: 16, color: '#555', marginBottom: 20, lineHeight: 24 }, // Tambah lineHeight
+  containerScroll: {flex: 1, backgroundColor: '#FFF8F0'},
+  contentContainerScroll: {padding: 20, paddingBottom: 80}, // Tambah padding bawah lagi
+  image: {
+    width: '100%',
+    height: 250,
+    borderRadius: 12,
+    marginBottom: 20,
+    backgroundColor: '#e0e0e0',
+  },
+  title: {fontSize: 26, fontWeight: 'bold', marginBottom: 10, color: '#b35400'},
+  description: {
+    fontSize: 16,
+    color: '#5d5d5d',
+    marginBottom: 20,
+    lineHeight: 24,
+  },
   sectionTitle: {
-    fontSize: 20, // Besarkan section title
-    fontWeight: 'bold',
-    marginTop: 20,
-    marginBottom: 12, // Sedikit lebih banyak margin bawah
+    fontSize: 20,
+    fontWeight: '700',
+    marginTop: 15,
+    marginBottom: 10,
     color: '#f57c00',
   },
-  listItem: { fontSize: 16, marginBottom: 8, color: '#333', lineHeight: 22 }, // Tambah lineHeight
-  errorText: { fontSize: 16, textAlign: 'center', marginTop: 40, color: 'red' },
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20 }, // Tambah padding
+  listItem: {fontSize: 16, marginBottom: 7, color: '#444', lineHeight: 23},
+  errorText: {
+    fontSize: 16,
+    textAlign: 'center',
+    color: 'red',
+    fontWeight: '500',
+  },
+  center: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+    backgroundColor: '#FFF8F0',
+  },
   menuContainer: {
     position: 'absolute',
-    top: Platform.OS === 'ios' ? 0 : 5, // Sesuaikan posisi top untuk header
-    right: 15,
+    top: Platform.OS === 'ios' ? 5 : 10,
+    right: 10,
     backgroundColor: 'white',
-    borderRadius: 8, // Bulatkan sudut lebih
-    elevation: 8, // Tingkatkan elevasi
+    borderRadius: 10,
+    elevation: 8,
     shadowColor: '#000',
-    shadowOpacity: 0.3,
-    shadowRadius: 8, // Tingkatkan radius bayangan
-    shadowOffset: { width: 0, height: 4 }, // Sesuaikan offset bayangan
+    shadowOpacity: 0.2,
+    shadowRadius: 5,
+    shadowOffset: {width: 0, height: 2},
     zIndex: 1000,
-    width: 160, // Lebarkan sedikit
+    width: 170,
   },
   menuItem: {
-    paddingVertical: 14, // Tambah padding vertikal
-    paddingHorizontal: 18, // Tambah padding horizontal
-  },
-  menuItemBorderless: { // Untuk item terakhir tanpa border
-    paddingVertical: 14,
+    paddingVertical: 13,
     paddingHorizontal: 18,
+    borderBottomColor: '#f0f0f0',
+    borderBottomWidth: 1,
   },
-  menuText: {
-    fontSize: 16,
-    color: '#333',
-  },
+  menuItemBorderless: {borderBottomWidth: 0},
+  menuText: {fontSize: 16, color: '#333'},
   retryButton: {
     marginTop: 20,
     backgroundColor: '#f57c00',
     paddingVertical: 10,
     paddingHorizontal: 20,
-    borderRadius: 5,
+    borderRadius: 8,
   },
-  retryButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
+  retryButtonText: {color: '#fff', fontSize: 16, fontWeight: 'bold'},
 });
 
 export default RecipeDetailScreen;

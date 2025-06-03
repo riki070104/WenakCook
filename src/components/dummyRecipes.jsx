@@ -116,6 +116,4 @@ export const initialRecipes = [
   }
 ];
 
-// Kalo mau dipake buat gambar default di App.jsx:
-// Ganti ke gambar yang lebih generik buat default
 export const defaultRecipeImage = require("../assets/images/Rawon.jpg"); // Path disesuaikan

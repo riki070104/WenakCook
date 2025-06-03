@@ -1,9 +1,9 @@
-// App.js
-import React, { useState, useEffect } from 'react'; 
-import { NavigationContainer } from '@react-navigation/native';
-import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { Alert, View, Text } from 'react-native';
+// App.jsx
+import React, {useState, useEffect, useCallback} from 'react';
+import {NavigationContainer} from '@react-navigation/native';
+import {createNativeStackNavigator} from '@react-navigation/native-stack';
+import {createBottomTabNavigator} from '@react-navigation/bottom-tabs';
+import {Alert, View, Text, ActivityIndicator, Platform} from 'react-native';
 
 import HomeScreenComponent from './src/screens/HomeScreen';
 import RecipeLibraryComponent from './src/screens/RecipeLibrary.jsx';
@@ -12,70 +12,88 @@ import ProfileScreenComponent from './src/screens/ProfileScreen.jsx';
 import RecipeDetailScreenComponent from './src/screens/RecipeDetailScreen.jsx';
 
 import Ionicons from 'react-native-vector-icons/Ionicons';
-import { MenuProvider } from 'react-native-popup-menu';
-import { getAllRecipesAPI as fetchAllRecipesAPI } from './src/services/API'; // Ganti nama impor getAllRecipesAPI
+import {MenuProvider} from 'react-native-popup-menu';
+import {getAllRecipesFirestore} from './src/services/Firebase';
 
 const Tab = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
+const defaultRecipeImageFromApp = require('./src/assets/images/Rawon.jpg');
 
-const defaultRecipeImageFromApp = require('./src/assets/images/Rawon.jpg'); // Digunakan jika API tidak ada gambar
-
-// Dummy recipes tidak lagi jadi sumber utama jika menggunakan API
-// const dummyRecipes = [ ... ];
-
-function HomeNavigator({ recipes, handleUpdateRecipeState, handleDeleteRecipeState }) { // Tambahkan props
+function HomeNavigator({
+  recipes,
+  handleUpdateRecipeStateInApp,
+  handleDeleteRecipeStateInApp,
+  refreshRecipesFromFirestore,
+}) {
   return (
-    <Stack.Navigator>
-      <Stack.Screen name="HomeMain" options={{ headerShown: false }}>
-        {props => <HomeScreenComponent {...props} recipes={recipes} />}
+    <Stack.Navigator
+      screenOptions={{
+        headerStyle: {backgroundColor: '#FFF8F0'},
+        headerTintColor: '#b35400',
+        headerTitleStyle: {fontWeight: 'bold'},
+      }}>
+      <Stack.Screen name="HomeMain" options={{headerShown: false}}>
+        {props => (
+          <HomeScreenComponent
+            {...props}
+            recipes={recipes}
+            onRefreshRequest={refreshRecipesFromFirestore}
+          />
+        )}
       </Stack.Screen>
-      <Stack.Screen name="RecipeDetail" options={{ title: 'Detail Resep' }}>
-        {props => <RecipeDetailScreenComponent {...props} 
-                    onRecipeUpdatedInList={handleUpdateRecipeState} 
-                    onRecipeDeletedInList={handleDeleteRecipeState} />}
-      </Stack.Screen>
+      <Stack.Screen
+        name="RecipeDetail"
+        component={RecipeDetailScreenComponent}
+        options={{title: 'Detail Resep'}}
+        // Props onRecipeUpdatedInList & onRecipeDeletedInList akan di-pass melalui initialParams di MainTabs
+      />
     </Stack.Navigator>
   );
 }
 
-function RecipeLibraryNavigator({ recipes, handleUpdateRecipeState, handleDeleteRecipeState }) { // Tambahkan props
+function RecipeLibraryNavigator({
+  handleUpdateRecipeStateInApp,
+  handleDeleteRecipeStateInApp,
+}) {
   return (
-    <Stack.Navigator>
-      <Stack.Screen name="RecipeLibraryMain" options={{ headerShown: false }}>
-        {props => <RecipeLibraryComponent {...props} recipes={recipes} />}
-      </Stack.Screen>
-      <Stack.Screen name="RecipeDetail" options={{ title: 'Detail Resep' }}>
-         {props => <RecipeDetailScreenComponent {...props} 
-                     onRecipeUpdatedInList={handleUpdateRecipeState}
-                     onRecipeDeletedInList={handleDeleteRecipeState} />}
-      </Stack.Screen>
+    <Stack.Navigator
+      screenOptions={{
+        headerStyle: {backgroundColor: '#FFF8F0'},
+        headerTintColor: '#b35400',
+        headerTitleStyle: {fontWeight: 'bold'},
+      }}>
+      <Stack.Screen
+        name="RecipeLibraryMain"
+        options={{headerShown: false}}
+        component={RecipeLibraryComponent}
+      />
+      <Stack.Screen
+        name="RecipeDetail"
+        component={RecipeDetailScreenComponent}
+        options={{title: 'Detail Resep'}}
+        // Props onRecipeUpdatedInList & onRecipeDeletedInList akan di-pass melalui initialParams di MainTabs
+      />
     </Stack.Navigator>
   );
 }
 
-// ProfileNavigator tidak langsung ke RecipeDetail, jadi tidak perlu callback update/delete state utama.
-// RecipeForm yang dipanggil dari sini akan menggunakan handleAddNewRecipe untuk update state utama.
-function ProfileNavigator({ addRecipeFunction }) {
+function ProfileNavigator({addRecipeToAppState}) {
   return (
-    <Stack.Navigator>
-      <Stack.Screen name="ProfileMain" options={{ headerShown: false }} component={ProfileScreenComponent} />
-      {/* RecipeForm di sini khusus untuk menambah resep baru */}
-      <Stack.Screen name="RecipeForm" options={{ title: 'Tambah Resep Baru' }}>
+    <Stack.Navigator screenOptions={{headerShown: false}}>
+      <Stack.Screen name="ProfileMain" component={ProfileScreenComponent} />
+      <Stack.Screen name="RecipeFormProfile" options={{title: 'Tambah Resep'}}>
         {props => (
           <RecipeFormComponent
             {...props}
-            // Pastikan route.params diset dengan benar untuk mode tambah
             route={{
               ...props.route,
               params: {
-                ...props.route.params,
-                isEdit: false, // Eksplisit untuk mode tambah
-                onFormSubmitSuccess: (newRecipeFromApi) => {
-                  // addRecipeFunction adalah handleAddNewRecipe dari App.js
-                  addRecipeFunction(newRecipeFromApi);
-                  // navigation.goBack() sudah ada di RecipeForm
-                }
-              }
+                ...(props.route.params || {}),
+                isEdit: false,
+                onFormSubmitSuccess: newRecipe => {
+                  addRecipeToAppState(newRecipe);
+                },
+              },
             }}
           />
         )}
@@ -84,162 +102,209 @@ function ProfileNavigator({ addRecipeFunction }) {
   );
 }
 
-function MainTabs({ recipes, addRecipeFunction, updateRecipeFunction, deleteRecipeFunction }) { // Tambahkan props
+function MainTabs({
+  recipes,
+  addRecipeToAppState,
+  updateRecipeInAppState,
+  deleteRecipeFromAppState,
+  refreshRecipesFromFirestore,
+}) {
   return (
     <Tab.Navigator
-      screenOptions={({ route }) => ({
+      screenOptions={({route}) => ({
         headerShown: false,
-        tabBarIcon: ({ focused, color, size }) => {
+        tabBarIcon: ({focused, color, size}) => {
           let iconName;
-          if (route.name === 'HomeTab') iconName = focused ? 'home' : 'home-outline';
-          else if (route.name === 'LibraryTab') iconName = focused ? 'book' : 'book-outline';
-          else if (route.name === 'ProfileTab') iconName = focused ? 'person-circle' : 'person-circle-outline';
+          if (route.name === 'HomeTab')
+            iconName = focused ? 'home' : 'home-outline';
+          else if (route.name === 'LibraryTab')
+            iconName = focused ? 'library' : 'library-outline';
+          else if (route.name === 'ProfileTab')
+            iconName = focused ? 'person-circle' : 'person-circle-outline';
           return <Ionicons name={iconName} size={size} color={color} />;
         },
-        tabBarActiveTintColor: '#f57c00',
-        tabBarInactiveTintColor: 'gray',
-      })}
-    >
-      <Tab.Screen name="HomeTab" options={{ tabBarLabel: 'Resep' }}>
-        {props => <HomeNavigator {...props} recipes={recipes} 
-                    handleUpdateRecipeState={updateRecipeFunction}
-                    handleDeleteRecipeState={deleteRecipeFunction} />}
+        tabBarActiveTintColor: '#b35400',
+        tabBarInactiveTintColor: '#757575',
+        tabBarStyle: {
+          backgroundColor: '#FFF8F0',
+          borderTopWidth: 1,
+          borderTopColor: '#E0DACC',
+          paddingBottom: Platform.OS === 'ios' ? 15 : 5,
+          height: Platform.OS === 'ios' ? 75 : 60,
+        },
+        tabBarLabelStyle: {
+          fontSize: 11,
+          fontWeight: '500',
+          marginBottom: Platform.OS === 'ios' ? -10 : 3,
+        },
+      })}>
+      <Tab.Screen name="HomeTab" options={{tabBarLabel: 'Beranda'}}>
+        {props => (
+          <HomeNavigator
+            {...props}
+            recipes={recipes}
+            handleUpdateRecipeStateInApp={updateRecipeInAppState}
+            handleDeleteRecipeStateInApp={deleteRecipeFromAppState}
+            refreshRecipesFromFirestore={refreshRecipesFromFirestore}
+          />
+        )}
       </Tab.Screen>
-      <Tab.Screen name="LibraryTab" options={{ tabBarLabel: 'Koleksi' }}>
-        {props => <RecipeLibraryNavigator {...props} recipes={recipes} 
-                    handleUpdateRecipeState={updateRecipeFunction}
-                    handleDeleteRecipeState={deleteRecipeFunction} />}
+      <Tab.Screen name="LibraryTab" options={{tabBarLabel: 'Koleksi'}}>
+        {props => (
+          <RecipeLibraryNavigator
+            {...props}
+            // RecipeLibrary fetch sendiri, tapi callback tetap berguna jika navigasi ke Detail dari sini
+            handleUpdateRecipeStateInApp={updateRecipeInAppState}
+            handleDeleteRecipeStateInApp={deleteRecipeFromAppState}
+          />
+        )}
       </Tab.Screen>
-      <Tab.Screen name="ProfileTab" options={{ tabBarLabel: 'Profil' }}>
-        {props => <ProfileNavigator {...props} addRecipeFunction={addRecipeFunction} />}
+      <Tab.Screen name="ProfileTab" options={{tabBarLabel: 'Profil'}}>
+        {props => (
+          <ProfileNavigator
+            {...props}
+            addRecipeToAppState={addRecipeToAppState}
+          />
+        )}
       </Tab.Screen>
     </Tab.Navigator>
   );
 }
 
 const App = () => {
-  const [recipes, setRecipes] = useState([]); // Mulai dengan array kosong
+  const [recipes, setRecipes] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  const loadRecipes = async () => {
+  const loadRecipesFromFirestore = useCallback(async () => {
+    console.log('App.jsx: Memuat resep dari Firestore...');
     setIsLoading(true);
     try {
-      const apiRecipes = await fetchAllRecipesAPI(); // Menggunakan fetchAllRecipesAPI dari services
-      // Pastikan image di sini adalah { uri: ... } atau null, dan default jika null dari API
-      const formattedRecipes = apiRecipes.map(recipe => ({
+      const firestoreRecipes = await getAllRecipesFirestore();
+      const formattedRecipes = firestoreRecipes.map(recipe => ({
         ...recipe,
-        image: recipe.image || defaultRecipeImageFromApp // Jika API mengembalikan null, gunakan default
+        image: recipe.image || defaultRecipeImageFromApp,
       }));
       setRecipes(formattedRecipes);
+      console.log(`App.jsx: Berhasil memuat ${formattedRecipes.length} resep.`);
     } catch (error) {
-      Alert.alert("Gagal Memuat", "Tidak bisa mengambil data resep dari server.");
-      console.error("Error loading recipes for App.js:", error);
-      setRecipes([]); // Atau set ke dummy jika ada sebagai fallback
+      Alert.alert(
+        'Gagal Memuat Data Awal',
+        'Tidak dapat mengambil data resep dari server.',
+      );
+      console.error('App.jsx: Error memuat resep:', error);
     } finally {
       setIsLoading(false);
     }
-  };
-
-  useEffect(() => {
-    loadRecipes(); // Muat resep saat aplikasi pertama kali dijalankan
   }, []);
 
-  // Fungsi ini dipanggil oleh RecipeForm (via ProfileNavigator) setelah API call sukses
-  const handleAddNewRecipe = (newRecipeFromApi) => {
-    // newRecipeFromApi sudah dalam format yang benar dari mapApiRecipeToAppFormat
-    const recipeWithDefaultImage = {
-        ...newRecipeFromApi,
-        image: newRecipeFromApi.image || defaultRecipeImageFromApp
-    };
-    setRecipes(prevRecipes => [...prevRecipes, recipeWithDefaultImage]);
-    Alert.alert("Info Aplikasi", "Resep baru ditambahkan ke daftar utama.");
-  };
+  useEffect(() => {
+    loadRecipesFromFirestore();
+  }, [loadRecipesFromFirestore]);
 
-  // Fungsi ini dipanggil oleh RecipeDetailScreen setelah RecipeForm (edit) sukses
-  const handleUpdateRecipeState = (updatedRecipeFromApi) => {
-     const recipeWithDefaultImage = {
-        ...updatedRecipeFromApi,
-        image: updatedRecipeFromApi.image || defaultRecipeImageFromApp
-    };
-    setRecipes(prevRecipes =>
-      prevRecipes.map(recipe =>
-        recipe.id === recipeWithDefaultImage.id ? recipeWithDefaultImage : recipe
-      )
+  const handleAddNewRecipeToState = useCallback(
+    newRecipeFromFirestore => {
+      if (!newRecipeFromFirestore || !newRecipeFromFirestore.id) {
+        console.warn(
+          'App.jsx: Gagal menambah resep baru ke state, data tidak valid:',
+          newRecipeFromFirestore,
+        );
+        loadRecipesFromFirestore();
+        return;
+      }
+      const recipeWithDefaultImage = {
+        ...newRecipeFromFirestore,
+        image: newRecipeFromFirestore.image || defaultRecipeImageFromApp,
+      };
+      setRecipes(prevRecipes => [recipeWithDefaultImage, ...prevRecipes]);
+      console.log(
+        'App.jsx: Resep baru ditambahkan ke state:',
+        recipeWithDefaultImage.name,
+      );
+    },
+    [loadRecipesFromFirestore],
+  );
+
+  const handleUpdateRecipeInState = useCallback(
+    updatedRecipeFromFirestore => {
+      if (!updatedRecipeFromFirestore || !updatedRecipeFromFirestore.id) {
+        console.warn(
+          'App.jsx: Gagal update resep di state, data tidak valid:',
+          updatedRecipeFromFirestore,
+        );
+        loadRecipesFromFirestore();
+        return;
+      }
+      const recipeWithDefaultImage = {
+        ...updatedRecipeFromFirestore,
+        image: updatedRecipeFromFirestore.image || defaultRecipeImageFromApp,
+      };
+      setRecipes(prevRecipes =>
+        prevRecipes.map(r =>
+          r.id === recipeWithDefaultImage.id ? recipeWithDefaultImage : r,
+        ),
+      );
+      console.log(
+        'App.jsx: Resep di state diperbarui:',
+        recipeWithDefaultImage.name,
+      );
+    },
+    [loadRecipesFromFirestore],
+  );
+
+  const handleDeleteRecipeFromState = useCallback(
+    recipeIdToDelete => {
+      if (!recipeIdToDelete) {
+        console.warn('App.jsx: Gagal hapus resep dari state, ID tidak valid.');
+        loadRecipesFromFirestore();
+        return;
+      }
+      setRecipes(prevRecipes =>
+        prevRecipes.filter(recipe => recipe.id !== recipeIdToDelete),
+      );
+      console.log('App.jsx: Resep dihapus dari state, ID:', recipeIdToDelete);
+    },
+    [loadRecipesFromFirestore],
+  );
+
+  if (isLoading && recipes.length === 0) {
+    return (
+      <View
+        style={{
+          flex: 1,
+          justifyContent: 'center',
+          alignItems: 'center',
+          backgroundColor: '#FFF8F0',
+        }}>
+        <ActivityIndicator size="large" color="#b35400" />
+        <Text style={{marginTop: 10, color: '#555', fontSize: 16}}>
+          Memuat Resep WenakCook...
+        </Text>
+      </View>
     );
-    Alert.alert("Info Aplikasi", "Resep diperbarui di daftar utama.");
-  };
-  
-  const handleDeleteRecipeState = (recipeIdToDelete) => {
-    setRecipes(prevRecipes => prevRecipes.filter(recipe => recipe.id !== recipeIdToDelete));
-    Alert.alert("Info Aplikasi", "Resep dihapus dari daftar utama.");
-  };
-
-
-  if (isLoading && recipes.length === 0) { // Tampilkan loading jika data belum ada
-      // Anda bisa membuat komponen LoadingScreen yang lebih baik
-      return <View style={{flex: 1, justifyContent: 'center', alignItems: 'center'}}><Text>Loading Recipes...</Text></View>;
   }
 
   return (
     <MenuProvider>
       <NavigationContainer>
-        {/* Stack Navigator utama tidak lagi mendefinisikan RecipeForm secara global,
-            karena RecipeForm dipanggil dari dalam ProfileNavigator (untuk add)
-            atau dari RecipeDetailScreen (untuk edit), yang mana RecipeDetailScreen
-            sudah menjadi bagian dari HomeNavigator atau LibraryNavigator.
-            RecipeForm yang di RecipeDetail akan menggunakan definisi dari ProfileNavigator
-            jika nama screen-nya sama.
-            Namun, lebih baik jika RecipeForm adalah screen yang berdiri sendiri di Main Stack jika
-            ingin dipanggil secara global dengan parameter berbeda.
-            Untuk kasus ini, karena RecipeForm dipanggil dari dalam nested stack, kita
-            tidak perlu instance global lagi jika tidak ada use case lain.
-            
-            Jika Anda *tetap* ingin RecipeForm sebagai screen global di App Stack (misal untuk diakses dari FAB):
-            <Stack.Screen name="RecipeFormGlobal">
-              {props => <RecipeFormComponent {...props} />} // Harus diberi params yang sesuai saat navigasi
-            </Stack.Screen>
-            Lalu dari RecipeDetailScreen.handleEdit:
-            navigation.navigate('RecipeFormGlobal', { // Nama screen global
-                recipe: recipe, 
-                isEdit: true, 
-                onFormSubmitSuccess: (updatedRecipeData) => { ... }
-            });
-            Dan dari ProfileScreen, jika ingin menggunakan instance RecipeForm yang sama:
-            navigation.navigate('RecipeFormGlobal', { // Nama screen global
-                isEdit: false, 
-                onFormSubmitSuccess: (newRecipeFromApi) => { handleAddNewRecipe(newRecipeFromApi); }
-            });
-            Ini membuat `RecipeForm.jsx` menjadi satu komponen yang reusable.
-            
-            Untuk saat ini, kita biarkan RecipeForm di ProfileNavigator dan RecipeDetailScreen navigasi ke sana.
-            Ini berarti RecipeForm di ProfileNavigator akan dipakai untuk edit juga.
-            Maka, ProfileNavigator perlu dimodifikasi agar bisa menangani `onFormSubmitSuccess` untuk edit juga,
-            atau `RecipeDetailScreen` menavigasi ke instance `RecipeForm` lain.
-
-            Solusi paling sederhana: Biarkan `RecipeForm` di `ProfileNavigator` khusus untuk add.
-            Dan `RecipeDetailScreen` akan navigasi ke screen `RecipeForm` yang terdaftar di `Stack.Navigator` utama (App).
-        */}
-        <Stack.Navigator screenOptions={{ headerShown: false }}>
+        <Stack.Navigator screenOptions={{headerShown: false}}>
           <Stack.Screen name="MainTabs">
-            {props => <MainTabs {...props} 
-                        recipes={recipes} 
-                        addRecipeFunction={handleAddNewRecipe} 
-                        updateRecipeFunction={handleUpdateRecipeState}
-                        deleteRecipeFunction={handleDeleteRecipeState}
-                        />}
-          </Stack.Screen>
-          {/* Definisikan RecipeForm di sini agar bisa diakses secara global untuk edit */}
-          <Stack.Screen name="RecipeForm" options={({ route }) => ({
-            title: route.params?.isEdit ? 'Edit Resep' : 'Tambah Resep Baru',
-            headerShown: false, // Karena RecipeForm punya header custom
-          })}>
             {props => (
-              <RecipeFormComponent
+              <MainTabs
                 {...props}
-                // route.params akan otomatis terisi dari navigation.navigate()
-                // onFormSubmitSuccess akan ada di props.route.params jika dikirim
+                recipes={recipes}
+                addRecipeToAppState={handleAddNewRecipeToState}
+                updateRecipeInAppState={handleUpdateRecipeInState}
+                deleteRecipeFromAppState={handleDeleteRecipeFromState}
+                refreshRecipesFromFirestore={loadRecipesFromFirestore}
               />
             )}
+          </Stack.Screen>
+          <Stack.Screen name="RecipeForm" options={{headerShown: false}}>
+            {/* RecipeForm ini akan digunakan untuk mode EDIT yang dipanggil dari RecipeDetailScreen.
+                Callback onFormSubmitSuccess yang memanggil handleUpdateRecipeInState
+                akan di-pass dari RecipeDetailScreen melalui navigation params.
+            */}
+            {props => <RecipeFormComponent {...props} />}
           </Stack.Screen>
         </Stack.Navigator>
       </NavigationContainer>
