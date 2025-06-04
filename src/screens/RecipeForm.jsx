@@ -17,7 +17,10 @@ import {launchImageLibrary} from 'react-native-image-picker';
 import {
   addNewRecipeFirestore,
   updateRecipeFirestore,
-} from '../services/Firebase';
+} from '../services/Firebase'; // Pastikan path ini benar
+
+// Impor Notifee
+import notifee, {AndroidImportance} from '@notifee/react-native';
 
 const RecipeForm = ({navigation, route}) => {
   const {
@@ -26,17 +29,23 @@ const RecipeForm = ({navigation, route}) => {
     onFormSubmitSuccess,
   } = route.params || {};
 
+  // State untuk form fields
   const [recipeName, setRecipeName] = useState('');
   const [shortDescription, setShortDescription] = useState('');
   const [currentIngredient, setCurrentIngredient] = useState('');
   const [ingredientsList, setIngredientsList] = useState([]);
   const [currentStep, setCurrentStep] = useState('');
   const [stepsList, setStepsList] = useState([]);
-  const [imageUri, setImageUri] = useState(null); // URI lokal dari image picker, atau URL http jika sudah ada
-  const [currentSavedImageUrl, setCurrentSavedImageUrl] = useState(null); // URL gambar yg tersimpan di DB (untuk edit)
+
+  // State untuk gambar
+  const [imageUri, setImageUri] = useState(null); // URI lokal dari image picker, atau URL http jika sudah ada dari edit
+  const [currentSavedImageUrl, setCurrentSavedImageUrl] = useState(null); // URL gambar yg tersimpan di DB (untuk mode edit)
+
+  // State untuk mode edit dan proses submit
   const [editingRecipeId, setEditingRecipeId] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  // Variabel ini tidak perlu state, nilainya diturunkan dari props/state lain
   const screenTitle = isEdit ? 'Edit Resep' : 'Tambah Resep Baru';
   const submitButtonText = isEdit ? 'Simpan Perubahan' : 'Simpan Resep';
 
@@ -48,9 +57,9 @@ const RecipeForm = ({navigation, route}) => {
         Array.isArray(recipeToEdit.ingredients) ? recipeToEdit.ingredients : [],
       );
       setStepsList(Array.isArray(recipeToEdit.steps) ? recipeToEdit.steps : []);
-      const existingImage = recipeToEdit.image?.uri || null;
-      setImageUri(existingImage); // Untuk display awal & perbandingan
-      setCurrentSavedImageUrl(existingImage); // Simpan URL asli dari DB
+      const existingImageUri = recipeToEdit.image?.uri || null;
+      setImageUri(existingImageUri); // Untuk display awal dan perbandingan apakah diubah
+      setCurrentSavedImageUrl(existingImageUri); // Simpan URL asli dari DB untuk referensi
       setEditingRecipeId(recipeToEdit.id);
     } else {
       // Reset form untuk mode tambah
@@ -72,16 +81,21 @@ const RecipeForm = ({navigation, route}) => {
       maxHeight: 800,
     };
     launchImageLibrary(options, response => {
-      if (response.didCancel) return;
+      if (response.didCancel) {
+        console.log('Pengguna batal memilih gambar');
+        return;
+      }
       if (response.errorCode) {
+        console.log('ImagePicker Error: ', response.errorMessage);
         Alert.alert(
           'Error Pilih Gambar',
-          `Tidak bisa memilih gambar: ${response.errorMessage}.`,
+          `Tidak bisa memilih gambar: ${response.errorMessage}. Pastikan izin sudah diberikan.`,
         );
         return;
       }
       if (response.assets && response.assets.length > 0) {
         setImageUri(response.assets[0].uri); // Ini akan menjadi URI lokal baru
+        console.log('Gambar baru dipilih (URI lokal):', response.assets[0].uri);
       }
     });
   };
@@ -112,6 +126,29 @@ const RecipeForm = ({navigation, route}) => {
     );
   };
 
+  const displayLocalNotification = async (title, body) => {
+    try {
+      await notifee.requestPermission();
+      const channelId = await notifee.createChannel({
+        id: 'recipe-success', // ID channel yang lebih spesifik
+        name: 'Notifikasi Sukses Resep',
+        importance: AndroidImportance.HIGH,
+      });
+      await notifee.displayNotification({
+        title: title,
+        body: body,
+        android: {
+          channelId: channelId,
+          pressAction: {id: 'default'},
+          // smallIcon: 'ic_notification', // Ganti 'ic_notification' dengan nama file ikon di android/app/src/main/res/drawable
+        },
+        ios: {sound: 'default'},
+      });
+    } catch (error) {
+      console.error('Gagal menampilkan notifikasi lokal:', error);
+    }
+  };
+
   const handleSubmit = async () => {
     if (recipeName.trim() === '') {
       Alert.alert('Input Kurang', 'Nama resep wajib diisi.');
@@ -131,15 +168,18 @@ const RecipeForm = ({navigation, route}) => {
     }
 
     setIsSubmitting(true);
-    let finalImageUrlToSave = currentSavedImageUrl; // Defaultnya gambar lama (untuk edit) atau null (untuk baru)
+    let finalImageUrlToSave = currentSavedImageUrl;
 
     try {
-      const hasNewLocalImage = imageUri && !imageUri.startsWith('http'); // Apakah imageUri adalah URI lokal baru
-      const imageWasRemoved =
-        imageUri === null && isEdit && currentSavedImageUrl; // User menghapus gambar yang ada
+      const isNewImageSelected =
+        imageUri &&
+        imageUri !== currentSavedImageUrl &&
+        !imageUri.startsWith('http');
+      const isImageRemovedByUser =
+        imageUri === null && isEdit && currentSavedImageUrl;
 
-      if (hasNewLocalImage) {
-        console.log('Mengunggah gambar baru ke backend...');
+      if (isNewImageSelected) {
+        console.log('Mengunggah gambar baru ke backend eksternal...');
         const localUri = imageUri;
         let filename = localUri.substring(localUri.lastIndexOf('/') + 1);
         const extension = filename.split('.').pop() || 'jpg';
@@ -158,7 +198,6 @@ const RecipeForm = ({navigation, route}) => {
           'https://backend-file-praktikum.vercel.app/upload/',
           {method: 'POST', body: imageFormData},
         );
-
         if (!uploadResponse.ok) {
           const errorText = await uploadResponse.text();
           throw new Error(
@@ -167,19 +206,17 @@ const RecipeForm = ({navigation, route}) => {
         }
         const uploadResult = await uploadResponse.json();
         finalImageUrlToSave = uploadResult.url;
-        console.log('Gambar baru diunggah, URL:', finalImageUrlToSave);
-        // TODO: Jika `isEdit` dan `currentSavedImageUrl` ada, idealnya panggil endpoint backend eksternal untuk menghapus `currentSavedImageUrl`
-      } else if (imageWasRemoved) {
-        finalImageUrlToSave = null; // Gambar dihapus
-        console.log('Gambar dihapus oleh pengguna.');
-        // TODO: Jika `currentSavedImageUrl` ada, idealnya panggil endpoint backend eksternal untuk menghapus `currentSavedImageUrl`
+      } else if (isImageRemovedByUser) {
+        finalImageUrlToSave = null;
+        // TODO: Jika backend eksternal punya API untuk hapus gambar, panggil di sini untuk currentSavedImageUrl
       }
-      // Jika tidak ada gambar lokal baru dan gambar tidak dihapus, `finalImageUrlToSave` tetap `currentSavedImageUrl`.
+      // Jika tidak ada perubahan gambar (imageUri === currentSavedImageUrl) atau gambar tidak diubah (imageUri adalah URL http lama),
+      // maka finalImageUrlToSave akan tetap bernilai currentSavedImageUrl.
 
       const recipePayloadForFirestore = {
         name: recipeName.trim(),
         shortDescription: shortDescription.trim(),
-        imageUrl: finalImageUrlToSave,
+        imageUrl: finalImageUrlToSave, // Ini adalah URL dari backend eksternal, atau null
         ingredients: ingredientsList,
         steps: stepsList,
       };
@@ -190,10 +227,22 @@ const RecipeForm = ({navigation, route}) => {
           editingRecipeId,
           recipePayloadForFirestore,
         );
-        Alert.alert('Sukses', 'Resep berhasil diperbarui!');
+        Alert.alert(
+          'Sukses',
+          `Resep "${savedRecipe.name}" berhasil diperbarui!`,
+        );
+        // Notifikasi untuk update bisa ditambahkan jika mau
+        // await displayLocalNotification("Resep Diperbarui! 🍳", `"${savedRecipe.name}" telah sukses diubah.`);
       } else {
         savedRecipe = await addNewRecipeFirestore(recipePayloadForFirestore);
-        Alert.alert('Sukses', 'Resep berhasil ditambahkan!');
+        Alert.alert(
+          'Sukses',
+          `Resep "${savedRecipe.name}" berhasil ditambahkan!`,
+        );
+        await displayLocalNotification(
+          'Resep Baru Ditambahkan! 🍲',
+          `"${savedRecipe.name}" kini ada di koleksi WenakCook.`,
+        );
       }
 
       if (onFormSubmitSuccess && savedRecipe) {
@@ -224,7 +273,8 @@ const RecipeForm = ({navigation, route}) => {
             disabled={isSubmitting}>
             <Text style={styles.backButtonText}>←</Text>
           </TouchableOpacity>
-          <Text style={styles.title}>{screenTitle}</Text>
+          <Text style={styles.title}>{screenTitle}</Text>{' '}
+          {/* Pemanggilan screenTitle di sini */}
         </View>
 
         <Text style={styles.label}>Nama Resep:</Text>
@@ -357,6 +407,8 @@ const RecipeForm = ({navigation, route}) => {
   );
 };
 
+// Styles dari file RecipeForm.jsx yang Abang berikan di prompt sebelumnya,
+// dengan sedikit penyesuaian dari kode final kita.
 const styles = StyleSheet.create({
   scrollView: {flex: 1, backgroundColor: '#fff'},
   container: {paddingHorizontal: 20, paddingTop: 20, paddingBottom: 40},
